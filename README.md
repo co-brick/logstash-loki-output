@@ -8,6 +8,13 @@ Added features:
 
 Available from <https://rubygems.org/gems/logstash-output-loki-tenants>
 
+## Building and pushing gem
+1. `gem build logstash-output-loki.gemspec`
+2. Push desired build version `gem push logstash-output-loki-tenants-{VERSION}.gem`
+    - In case of massage 'Repushing of gem versions is not allowed.' Raise the plugin version in logstash-output-loki.gemspec
+    - Rebuild the plugin
+    - Push proper version
+
 ## Contributing to Loki Logstash Output Plugin
 
 For information about how to use this plugin see this [documentation](../../docs/sources/clients/logstash/_index.md).
