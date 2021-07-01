@@ -35,9 +35,10 @@ describe LogStash::Outputs::Loki do
       plugin = LogStash::Plugin.lookup("output", "loki").new(simple_loki_config)
       expect(plugin.batch).to eql nil
       expect(plugin.add_entry_to_batch(entry, "a")).to eql true
-      expect(plugin.add_entry_to_batch(entry, "b")).to eql true
+      expect(plugin.add_entry_to_batch(entry, "fake")).to eql true
       expect(plugin.add_entry_to_batch(entry, nil)).to eql true
       expect(plugin.add_entry_to_batch(entry, "")).to eql true
+      expect(plugin.add_entry_to_batch(entry, "default")).to eql true
       expect(plugin.batches.keys.length).to eq 3
     end
 
@@ -58,6 +59,20 @@ describe LogStash::Outputs::Loki do
       expect(plugin.batch.streams[lbs.to_s]['entries'].length).to eq 2
       expect(plugin.batch.streams[lbs.to_s]['labels']).to eq lbs
       expect(plugin.batch.size_bytes).to eq 14
+      expect(plugin.batch("default").size_bytes).to eq 14
+    end
+
+    it 'should add entry to tenant fake' do
+      plugin = LogStash::Plugin.lookup("output", "loki").new(simple_loki_config)
+      expect(plugin.batch("fake")).to eql nil
+      expect(plugin.add_entry_to_batch(entry, "fake")).to eql true
+      expect(plugin.add_entry_to_batch(entry, "fake")).to eql true
+      expect(plugin.batch("fake")).not_to be_nil
+      expect(plugin.batch).to be_nil
+      expect(plugin.batch("fake").streams.length).to eq 1
+      expect(plugin.batch("fake").streams[lbs.to_s]['entries'].length).to eq 2
+      expect(plugin.batch("fake").streams[lbs.to_s]['labels']).to eq lbs
+      expect(plugin.batch("fake").size_bytes).to eq 14
     end
 
     it 'should not add if full' do
@@ -96,6 +111,15 @@ describe LogStash::Outputs::Loki do
       expect(loki.add_entry_to_batch(entry)).to eql true
       sleep(1)
       expect(loki.is_batch_expired).to be true
+    end
+    it 'should expire if old different tenants' do
+      loki = LogStash::Outputs::Loki.new(simple_loki_config.merge!({'batch_wait'=>0.5}))
+      expect(loki.add_entry_to_batch(entry, "fake")).to eql true
+      sleep(1)
+      expect(loki.add_entry_to_batch(entry, "custom")).to eql true
+      expect(loki.is_batch_expired("fake")).to be true
+      expect(loki.is_batch_expired("custom")).to be false
+      expect(loki.is_batch_expired).to be false
     end
   end
 
@@ -172,6 +196,30 @@ describe LogStash::Outputs::Loki do
         }
       )
       loki.send(b, "custom")
+      expect(post).to have_been_requested.times(1)
+    end
+    it 'should send message tenant fake' do
+      conf = {
+        'url'=>'http://localhost:3100/loki/api/v1/push',
+        'username' => 'foo',
+        'password' => 'bar',
+        'tenant_id' => 'custom'
+      }
+      loki = LogStash::Outputs::Loki.new(conf)
+      loki.register
+      b = Batch.new(entry)
+      post = stub_request(:post, "http://localhost:3100/loki/api/v1/push").with(
+        basic_auth: ['foo', 'bar'],
+        body: b.to_json,
+        headers:{
+          'Content-Type' => 'application/json' ,
+          'User-Agent' => 'loki-logstash',
+          'X-Scope-OrgID'=>'fake',
+          'Accept'=>'*/*',
+          'Accept-Encoding'=>'gzip;q=1.0,deflate;q=0.6,identity;q=0.3',
+        }
+      )
+      loki.send(b, "fake")
       expect(post).to have_been_requested.times(1)
     end
     it 'should send credentials' do
